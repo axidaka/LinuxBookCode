@@ -54,7 +54,8 @@ class StockFactory : boost::noncopyable
 
  private:
   mutable muduo::MutexLock mutex_;
-  std::map<string, boost::shared_ptr<Stock> > stocks_;
+  // 使用shared_ptr 如果没有主动去删除map::pair->second,则对象不会被释放
+  std::map<string, boost::shared_ptr<Stock> > stocks_;  
 };
 
 }
@@ -81,6 +82,7 @@ class StockFactory : boost::noncopyable
 
  private:
   mutable muduo::MutexLock mutex_;
+  // 使用weak_ptr 通过get返回的shared_ptr被释放时,weak_ptr说指向的对象也被释放,这里map大小是一直增长的
   std::map<string, boost::weak_ptr<Stock> > stocks_;
 };
 
@@ -101,6 +103,8 @@ class StockFactory : boost::noncopyable
     pStock = wkStock.lock();
     if (!pStock)
     {
+      // 利用shared_ptr定制析构功能,在析构对象时执行deleteStock释放map空间
+      // 但是使用bind绑定StockFactory的this指针,如果StockFactory对象先行释放,有问题
       pStock.reset(new Stock(key),
                    boost::bind(&StockFactory::deleteStock, this, _1));
       wkStock = pStock;
@@ -129,6 +133,7 @@ class StockFactory : boost::noncopyable
 namespace version4
 {
 
+// enable_shared_from_this可以让一个被shared_ptr管理生命周期的类能够在自己的成员函数内部访问shared_ptr
 class StockFactory : public boost::enable_shared_from_this<StockFactory>,
                      boost::noncopyable
 {
@@ -144,7 +149,7 @@ class StockFactory : public boost::enable_shared_from_this<StockFactory>,
     {
       pStock.reset(new Stock(key),
                    boost::bind(&StockFactory::deleteStock,
-                               shared_from_this(),
+                               shared_from_this(),  // 强引用,延长了Factory对象生命周期
                                _1));
       wkStock = pStock;
     }
@@ -185,6 +190,7 @@ class StockFactory : public boost::enable_shared_from_this<StockFactory>,
                    boost::bind(&StockFactory::weakDeleteCallback,
                                boost::weak_ptr<StockFactory>(shared_from_this()),
                                _1));
+      // 将shared_ptr转化为weak_ptr,才不会延长生命周期
       wkStock = pStock;
     }
     return pStock;

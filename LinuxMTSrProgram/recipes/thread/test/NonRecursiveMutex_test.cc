@@ -17,7 +17,7 @@ std::vector<Foo> foos;
 void post(const Foo& f)
 {
   MutexLockGuard lock(mutex);
-  foos.push_back(f);
+  foos.push_back(f); 
 }
 
 void traverse()
@@ -33,7 +33,7 @@ void traverse()
 void Foo::doit() const
 {
   Foo f;
-  post(f);
+  post(f); // vector push_back在容量不足的情况下会导致迭代器失效, traverse中迭代器it调用bug
 }
 
 int main()
