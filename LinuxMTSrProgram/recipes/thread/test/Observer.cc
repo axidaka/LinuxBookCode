@@ -10,10 +10,12 @@ class Observer
   virtual ~Observer();
   virtual void update() = 0;
 
+  // 不要直接在构造函数中直接调用 Observable::register_,避免在多线程中半生熟的this对象被调用
+  // 增加第二步骤调用
   void observe(Observable* s);
 
  protected:
-  Observable* subject_;
+  Observable* subject_;  // 多线程环境下该对象调用前有效性无法保证
 };
 
 class Observable
@@ -27,6 +29,7 @@ class Observable
     for (size_t i = 0; i < observers_.size(); ++i)
     {
       Observer* x = observers_[i];
+      // 多线程下仅仅判断指针有效性还不够
       if (x) {
         x->update(); // (3)
       }
@@ -34,7 +37,7 @@ class Observable
   }
 
  private:
-  std::vector<Observer*> observers_;
+  std::vector<Observer*> observers_;  // 多线程下需要同步原语
 };
 
 Observer::~Observer()

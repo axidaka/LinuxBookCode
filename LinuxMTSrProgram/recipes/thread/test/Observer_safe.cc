@@ -32,6 +32,7 @@ class Observable
     Iterator it = observers_.begin();
     while (it != observers_.end())
     {
+      // weak_ptr必须通过shared_ptr来使用，这一步是线程安全
       boost::shared_ptr<Observer> obj(it->lock());
       if (obj)
       {
@@ -48,7 +49,7 @@ class Observable
 
  private:
   mutable muduo::MutexLock mutex_;
-  std::vector<boost::weak_ptr<Observer> > observers_;
+  std::vector<boost::weak_ptr<Observer> > observers_;   // 与观察者对象之间不是强引用关系，不使用shared_ptr
   typedef std::vector<boost::weak_ptr<Observer> >::iterator Iterator;
 };
 
