@@ -34,11 +34,14 @@ class ThreadLocalSingleton : boost::noncopyable
   }
 
  private:
+  ThreadLocalSingleton();
+  ~ThreadLocalSingleton();
 
   static void destructor(void* obj)
   {
     assert(obj == t_value_);
     typedef char T_must_be_complete_type[sizeof(T) == 0 ? -1 : 1];
+    T_must_be_complete_type dummy; (void) dummy;
     delete t_value_;
     t_value_ = 0;
   }

@@ -10,7 +10,6 @@
 
 #include <utility>
 
-#include <mcheck.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -65,18 +64,19 @@ class EchoClient : boost::noncopyable
   {
     string msg(buf->retrieveAllAsString());
     LOG_TRACE << conn->name() << " recv " << msg.size() << " bytes at " << time.toString();
-    /*
-    if (msg == "exit\n")
+    if (msg == "quit\n")
     {
       conn->send("bye\n");
       conn->shutdown();
     }
-    if (msg == "quit\n")
+    else if (msg == "shutdown\n")
     {
       loop_->quit();
     }
-    conn->send(msg);
-    */
+    else
+    {
+      conn->send(msg);
+    }
   }
 
   EventLoop* loop_;
@@ -89,7 +89,8 @@ int main(int argc, char* argv[])
   if (argc > 1)
   {
     EventLoop loop;
-    InetAddress serverAddr(argv[1], 2000);
+    bool ipv6 = argc > 3;
+    InetAddress serverAddr(argv[1], 2000, ipv6);
 
     int n = 1;
     if (argc > 2)

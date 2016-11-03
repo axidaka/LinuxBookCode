@@ -11,12 +11,14 @@
 #ifndef MUDUO_NET_TCPSERVER_H
 #define MUDUO_NET_TCPSERVER_H
 
+#include <muduo/base/Atomic.h>
 #include <muduo/base/Types.h>
 #include <muduo/net/TcpConnection.h>
 
 #include <map>
 #include <boost/noncopyable.hpp>
 #include <boost/scoped_ptr.hpp>
+#include <boost/shared_ptr.hpp>
 
 namespace muduo
 {
@@ -35,15 +37,22 @@ class TcpServer : boost::noncopyable
 {
  public:
   typedef boost::function<void(EventLoop*)> ThreadInitCallback;
+  enum Option
+  {
+    kNoReusePort,
+    kReusePort,
+  };
 
   //TcpServer(EventLoop* loop, const InetAddress& listenAddr);
   TcpServer(EventLoop* loop,
             const InetAddress& listenAddr,
-            const string& nameArg);
+            const string& nameArg,
+            Option option = kNoReusePort);
   ~TcpServer();  // force out-line dtor, for scoped_ptr members.
 
-  const string& hostport() const { return hostport_; }
+  const string& ipPort() const { return ipPort_; }
   const string& name() const { return name_; }
+  EventLoop* getLoop() const { return loop_; }
 
   /// Set the number of threads for handling input.
   ///
@@ -58,6 +67,9 @@ class TcpServer : boost::noncopyable
   void setThreadNum(int numThreads);
   void setThreadInitCallback(const ThreadInitCallback& cb)
   { threadInitCallback_ = cb; }
+  /// valid after calling start()
+  boost::shared_ptr<EventLoopThreadPool> threadPool()
+  { return threadPool_; }
 
   /// Starts the server if it's not listenning.
   ///
@@ -91,15 +103,15 @@ class TcpServer : boost::noncopyable
   typedef std::map<string, TcpConnectionPtr> ConnectionMap;
 
   EventLoop* loop_;  // the acceptor loop
-  const string hostport_;
+  const string ipPort_;
   const string name_;
   boost::scoped_ptr<Acceptor> acceptor_; // avoid revealing Acceptor
-  boost::scoped_ptr<EventLoopThreadPool> threadPool_;
+  boost::shared_ptr<EventLoopThreadPool> threadPool_;
   ConnectionCallback connectionCallback_;
   MessageCallback messageCallback_;
   WriteCompleteCallback writeCompleteCallback_;
   ThreadInitCallback threadInitCallback_;
-  bool started_;
+  AtomicInt32 started_;
   // always in loop thread
   int nextConnId_;
   ConnectionMap connections_;

@@ -13,10 +13,12 @@
 
 using namespace muduo;
 
-ThreadPool::ThreadPool(const string& name)
+ThreadPool::ThreadPool(const string& nameArg)
   : mutex_(),
-    cond_(mutex_),
-    name_(name),
+    notEmpty_(mutex_),
+    notFull_(mutex_),
+    name_(nameArg),
+    maxQueueSize_(0),
     running_(false)
 {
 }
@@ -37,10 +39,14 @@ void ThreadPool::start(int numThreads)
   for (int i = 0; i < numThreads; ++i)
   {
     char id[32];
-    snprintf(id, sizeof id, "%d", i);
+    snprintf(id, sizeof id, "%d", i+1);
     threads_.push_back(new muduo::Thread(
           boost::bind(&ThreadPool::runInThread, this), name_+id));
     threads_[i].start();
+  }
+  if (numThreads == 0 && threadInitCallback_)
+  {
+    threadInitCallback_();
   }
 }
 
@@ -49,11 +55,17 @@ void ThreadPool::stop()
   {
   MutexLockGuard lock(mutex_);
   running_ = false;
-  cond_.notifyAll();
+  notEmpty_.notifyAll();
   }
   for_each(threads_.begin(),
            threads_.end(),
            boost::bind(&muduo::Thread::join, _1));
+}
+
+size_t ThreadPool::queueSize() const
+{
+  MutexLockGuard lock(mutex_);
+  return queue_.size();
 }
 
 void ThreadPool::run(const Task& task)
@@ -65,10 +77,38 @@ void ThreadPool::run(const Task& task)
   else
   {
     MutexLockGuard lock(mutex_);
+    while (isFull())
+    {
+      notFull_.wait();
+    }
+    assert(!isFull());
+
     queue_.push_back(task);
-    cond_.notify();
+    notEmpty_.notify();
   }
 }
+
+#ifdef __GXX_EXPERIMENTAL_CXX0X__
+void ThreadPool::run(Task&& task)
+{
+  if (threads_.empty())
+  {
+    task();
+  }
+  else
+  {
+    MutexLockGuard lock(mutex_);
+    while (isFull())
+    {
+      notFull_.wait();
+    }
+    assert(!isFull());
+
+    queue_.push_back(std::move(task));
+    notEmpty_.notify();
+  }
+}
+#endif
 
 ThreadPool::Task ThreadPool::take()
 {
@@ -76,21 +116,35 @@ ThreadPool::Task ThreadPool::take()
   // always use a while-loop, due to spurious wakeup
   while (queue_.empty() && running_)
   {
-    cond_.wait();
+    notEmpty_.wait();
   }
   Task task;
-  if(!queue_.empty())
+  if (!queue_.empty())
   {
     task = queue_.front();
     queue_.pop_front();
+    if (maxQueueSize_ > 0)
+    {
+      notFull_.notify();
+    }
   }
   return task;
+}
+
+bool ThreadPool::isFull() const
+{
+  mutex_.assertLocked();
+  return maxQueueSize_ > 0 && queue_.size() >= maxQueueSize_;
 }
 
 void ThreadPool::runInThread()
 {
   try
   {
+    if (threadInitCallback_)
+    {
+      threadInitCallback_();
+    }
     while (running_)
     {
       Task task(take());

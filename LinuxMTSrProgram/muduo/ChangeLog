@@ -1,4 +1,132 @@
-2012-mm-dd   Shuo Chen  <chenshuo@chenshuo.com>
+2016-10-25   Shuo Chen  <chenshuo@chenshuo.com>
+  * Last version in C++98/03, next version will use C++11
+  * Add Travis CI
+  * Add EvevtLoop::queueSize() by <zhuangshi23>
+  * Implement TcpClient::retry() by fdxuwei
+  * Change Condition::waitForSeconds() parameter type from int to double by ChaoShu
+  * Minor fixes by JackDrogon, YuCong, zieckey, wuzhaogai
+  * Version 1.0.9
+
+2016-02-11   Shuo Chen  <chenshuo@chenshuo.com>
+  * Preliminary support of IPv6.
+  * Add stop/startRead in TcpConnection by <zhang.jako>
+  * Version 1.0.8
+
+2015-11-09   Shuo Chen  <chenshuo@chenshuo.com>
+  * Add stats to Sudoku examples.
+  * Add example of PeriodicTimer class.
+  * Add thrift examples by <decimalbell>.
+  * Move hiredis example by <decimalbell> to contrib/.
+  * Move HTTP parseRequest to HttpContext class by <decimalbell>.
+  * Other fixes from <harrywong>, <cfreestar>, <qlhuangrui>, <lidw1988>.
+  * Version 1.0.7
+
+2015-04-03   Shuo Chen  <chenshuo@chenshuo.com>
+  * Fix ProcessInspector::threads().
+  * Minor fixes and improvements from liyuan989 and zieckey.
+  * More Sudoku examples.
+  * Version 1.0.6
+
+2015-01-30   Shuo Chen  <chenshuo@chenshuo.com>
+  * Add examples/procmon
+  * EventLoop supports set/get context by <zieckey>
+  * Fix bug #107
+  * Version 1.0.5
+
+2014-10-05   Shuo Chen  <chenshuo@chenshuo.com>
+  * Enrich interfaces of EventLoopThreadPool by <zieckey>
+  * Buffer supports reading int64_t by <alisper>
+  * Add hiredis example by <decimalbell>
+  * Fix bug about TcpClient life time again.
+  * Other minor fixes, including some from <huahang>
+  * Version 1.0.4
+
+2014-08-02   Shuo Chen  <chenshuo@chenshuo.com>
+  * Singleton supports 'no_destroy'.
+  * Get tcp_info in TcpConnection.
+  * Add CurrentThread::tidStringLength().
+  * Fix bug about TcpClient life time. More checks.
+  * Version 1.0.3
+
+2014-06-30   Shuo Chen  <chenshuo@chenshuo.com>
+  * Fix boundary check in Buffer::findEOL() by <renxingsong>.
+  * Fix typos in InetAddress.cc by <huangml.zh>.
+  * Fix 32-bit integer overflow bug in time_client by <guochy2012>.
+  * Update comments in Buffer::readFd() by <huahang>.
+  * Add ThreadPool::setThreadInitCallback().
+  * Rename GzipStream to ZlibStream.
+  * Version 1.0.2
+
+2014-04-10   Shuo Chen  <chenshuo@chenshuo.com>
+  * More ProcessInfo functions.
+  * Add GzipFile (in C++11 only) and GzipOutputStream.
+  * Add SystemInspector.
+  * muduo::Threads now sets thread name with prctl().
+  * Version 1.0.1
+
+2014-03-12   Shuo Chen  <chenshuo@chenshuo.com>
+  * Add TCP and RPC balancer examples
+  * Version 1.0.0
+
+2014-03-05   Shuo Chen  <chenshuo@chenshuo.com>
+  * Introduce class StringArg for passing C-style string arguments.
+  * Support localtime in logging.
+  * Version 1.0.0-rc2
+
+2014-02-22   Shuo Chen  <chenshuo@chenshuo.com>
+  * Default to release build.
+  * Version 1.0.0-rc1
+
+2014-02-22   Shuo Chen  <chenshuo@chenshuo.com>
+  * Add base/WeakCallback.h
+  * Add TcpConnection::forceCloseWithDelay().
+  * Add InetAddress::resolve for sync DNS resolving.
+  * Add simple Protobuf codec for single message type.
+  * Add ACE ttcp and logging examples.
+  * Fix race conditoin in RpcChannel::CallMethod().
+  * Version 0.9.8
+
+2014-01-11   Shuo Chen  <chenshuo@chenshuo.com>
+  * Add TcpConnection::forceClose().
+  * Add fastcgi nginx.conf example
+  * Fix iterator invalidation in hub.cc.
+  * Version 0.9.7
+
+2013-10-21   Shuo Chen  <chenshuo@chenshuo.com>
+  * Minor fixes.
+  * Version 0.9.6
+
+2013-08-31   Shuo Chen  <chenshuo@chenshuo.com>
+  * Add C++11 rvalue overloads for boost::function parameters
+  * Add PerformanceInspector, support remote profiling with gperftools
+  * Add examples of memcached server and client
+  * Version 0.9.5
+
+2013-07-28   Shuo Chen  <chenshuo@chenshuo.com>
+  * Protobuf RPC wire protocol changed,
+    package name removed in 'service' field.
+  * Add roundtrip_udp as a UDP example
+  * More inspect
+  * Fix Connector::stop()
+  * Fix for protobuf 2.5.0
+  * Version 0.9.4
+
+2013-05-11   Shuo Chen  <chenshuo@chenshuo.com>
+  * ThreadPool can be blocking
+  * Support SO_REUSEPORT, added in kernel 3.9.0
+  * Fix Mutex::isLockedByThisThread()
+  * Version 0.9.3
+
+2013-03-22   Shuo Chen  <chenshuo@chenshuo.com>
+  * Fix bugs
+  * Add Sudoku client
+  * Version 0.9.2
+
+2013-01-16   Shuo Chen  <chenshuo@chenshuo.com>
+  * Fix bug introduced in dd26871
+  * Version 0.9.1
+
+2013-01-09   Shuo Chen  <chenshuo@chenshuo.com>
   * Add single thread concurrent download example in examples/curl.
   * Add distributed word counting example.
   * Add simple FastCGI example.

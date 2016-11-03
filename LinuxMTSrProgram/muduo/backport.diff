@@ -1,12 +1,13 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -9,18 +9,18 @@ endif()
+@@ -9,19 +9,19 @@ endif()
  set(CXX_FLAGS
   -g
   # -DVALGRIND
 - # -DMUDUO_STD_STRING
 + -DMUDUO_STD_STRING
+  -D_FILE_OFFSET_BITS=64
   -Wall
   -Wextra
   -Werror
@@ -24,13 +25,24 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
   # -MMD
   # -std=c++0x
   -rdynamic
+@@ -31,7 +31,7 @@ if(CMAKE_BUILD_BITS EQUAL 32)
+ endif()
+ string(REPLACE ";" " " CMAKE_CXX_FLAGS "${CXX_FLAGS}")
+ 
+-set(CMAKE_CXX_COMPILER "g++")
++set(CMAKE_CXX_COMPILER "g++4")
+ #set(CMAKE_CXX_COMPILER "icpc")
+ set(CMAKE_CXX_FLAGS_DEBUG "-O0")
+ set(CMAKE_CXX_FLAGS_RELEASE "-O2 -finline-limit=1000 -DNDEBUG")
 diff --git a/examples/idleconnection/CMakeLists.txt b/examples/idleconnection/CMakeLists.txt
 --- a/examples/idleconnection/CMakeLists.txt
 +++ b/examples/idleconnection/CMakeLists.txt
-@@ -1,2 +1,2 @@
+@@ -1,4 +1,4 @@
 -add_executable(idleconnection_echo echo.cc main.cc)
 +add_executable(idleconnection_echo EXCLUDE_FROM_ALL echo.cc main.cc)
  target_link_libraries(idleconnection_echo muduo_net)
+ 
+ add_executable(idleconnection_echo2 sortedlist.cc)
 diff --git a/muduo/base/Timestamp.cc b/muduo/base/Timestamp.cc
 --- a/muduo/base/Timestamp.cc
 +++ b/muduo/base/Timestamp.cc
@@ -46,9 +58,9 @@ diff --git a/muduo/base/Timestamp.cc b/muduo/base/Timestamp.cc
 diff --git a/muduo/base/tests/CMakeLists.txt b/muduo/base/tests/CMakeLists.txt
 --- a/muduo/base/tests/CMakeLists.txt
 +++ b/muduo/base/tests/CMakeLists.txt
-@@ -4,7 +4,7 @@ add_executable(atomic_unittest Atomic_unittest.cc)
- add_executable(blockingqueue_test BlockingQueue_test.cc)
- target_link_libraries(blockingqueue_test muduo_base)
+@@ -10,7 +10,7 @@ target_link_libraries(blockingqueue_test muduo_base)
+ add_executable(blockingqueue_bench BlockingQueue_bench.cc)
+ target_link_libraries(blockingqueue_bench muduo_base)
  
 -add_executable(boundedblockingqueue_test BoundedBlockingQueue_test.cc)
 +add_executable(boundedblockingqueue_test EXCLUDE_FROM_ALL BoundedBlockingQueue_test.cc)
@@ -80,10 +92,13 @@ diff --git a/muduo/net/Endian.h b/muduo/net/Endian.h
  
  namespace muduo
  {
-@@ -23,39 +24,37 @@ namespace sockets
+@@ -23,48 +24,38 @@ namespace sockets
  
  // the inline assembler code makes type blur,
  // so we disable warnings for a while.
+-#if __GNUC_MINOR__ >= 6
+-#pragma GCC diagnostic push
+-#endif
 -#pragma GCC diagnostic ignored "-Wconversion"
 -#pragma GCC diagnostic ignored "-Wold-style-cast"
 +#if __BYTE_ORDER == __LITTLE_ENDIAN
@@ -122,16 +137,21 @@ diff --git a/muduo/net/Endian.h b/muduo/net/Endian.h
 -  return be16toh(net16);
 +  return bswap_16(net16);
  }
+-#if __GNUC_MINOR__ >= 6
+-#pragma GCC diagnostic pop
+-#else
 -#pragma GCC diagnostic error "-Wconversion"
 -#pragma GCC diagnostic error "-Wold-style-cast"
-+#endif
+ #endif
  
+-
+ }
  }
  }
 diff --git a/muduo/net/EventLoop.cc b/muduo/net/EventLoop.cc
 --- a/muduo/net/EventLoop.cc
 +++ b/muduo/net/EventLoop.cc
-@@ -19,7 +19,8 @@
+@@ -18,7 +18,8 @@
  #include <boost/bind.hpp>
  
  #include <signal.h>
@@ -141,7 +161,7 @@ diff --git a/muduo/net/EventLoop.cc b/muduo/net/EventLoop.cc
  
  using namespace muduo;
  using namespace muduo::net;
-@@ -30,18 +31,6 @@ __thread EventLoop* t_loopInThisThread = 0;
+@@ -29,18 +30,6 @@ __thread EventLoop* t_loopInThisThread = 0;
  
  const int kPollTimeMs = 10000;
  
@@ -160,7 +180,7 @@ diff --git a/muduo/net/EventLoop.cc b/muduo/net/EventLoop.cc
  class IgnoreSigPipe
  {
   public:
-@@ -51,7 +40,6 @@ class IgnoreSigPipe
+@@ -50,7 +39,6 @@ class IgnoreSigPipe
      LOG_TRACE << "Ignore SIGPIPE";
    }
  };
@@ -168,41 +188,43 @@ diff --git a/muduo/net/EventLoop.cc b/muduo/net/EventLoop.cc
  
  IgnoreSigPipe initObj;
  }
-@@ -63,11 +51,15 @@ EventLoop::EventLoop()
-     callingPendingFunctors_(false),
+@@ -69,11 +57,17 @@ EventLoop::EventLoop()
      threadId_(CurrentThread::tid()),
      poller_(Poller::newDefaultPoller(this)),
--    timerQueue_(new TimerQueue(this)),
+     timerQueue_(new TimerQueue(this)),
 -    wakeupFd_(createEventfd()),
--    wakeupChannel_(new Channel(this, wakeupFd_))
-+    timerQueue_(new TimerQueue(this))
+-    wakeupChannel_(new Channel(this, wakeupFd_)),
+     currentActiveChannel_(NULL)
  {
-   LOG_TRACE << "EventLoop created " << this << " in thread " << threadId_;
+   LOG_DEBUG << "EventLoop created " << this << " in thread " << threadId_;
 +  if (::socketpair(AF_UNIX, SOCK_STREAM, 0, wakeupFd_) < 0)
 +  {
 +    LOG_SYSFATAL << "Failed in socketpair";
 +  }
++  sockets::setNonBlockAndCloseOnExec(wakeupFd_[0]);
++  sockets::setNonBlockAndCloseOnExec(wakeupFd_[1]);
 +  wakeupChannel_.reset(new Channel(this, wakeupFd_[0]));
 +
    if (t_loopInThisThread)
    {
      LOG_FATAL << "Another EventLoop " << t_loopInThisThread
-@@ -85,7 +77,8 @@ EventLoop::EventLoop()
- 
- EventLoop::~EventLoop()
+@@ -93,7 +87,8 @@ EventLoop::~EventLoop()
  {
+   LOG_DEBUG << "EventLoop " << this << " of thread " << threadId_
+             << " destructs in thread " << CurrentThread::tid();
 -  ::close(wakeupFd_);
 +  ::close(wakeupFd_[0]);
 +  ::close(wakeupFd_[1]);
    t_loopInThisThread = NULL;
  }
  
-@@ -100,11 +93,12 @@ void EventLoop::loop()
+@@ -108,12 +103,13 @@ void EventLoop::loop()
    while (!quit_)
    {
      activeChannels_.clear();
 -    pollReturnTime_ = poller_->poll(kPollTimeMs, &activeChannels_);
 +    pollReturnTime_ = poller_->poll(timerQueue_->getTimeout(), &activeChannels_);
+     ++iteration_;
      if (Logger::logLevel() <= Logger::TRACE)
      {
        printActiveChannels();
@@ -211,28 +233,39 @@ diff --git a/muduo/net/EventLoop.cc b/muduo/net/EventLoop.cc
      // TODO sort channel by priority
      eventHandling_ = true;
      for (ChannelList::iterator it = activeChannels_.begin();
-@@ -201,7 +195,7 @@ void EventLoop::abortNotInLoopThread()
+@@ -215,22 +211,19 @@ void EventLoop::abortNotInLoopThread()
+ 
  void EventLoop::wakeup()
  {
-   uint64_t one = 1;
+-  uint64_t one = 1;
 -  ssize_t n = sockets::write(wakeupFd_, &one, sizeof one);
++  char one = '1';
 +  ssize_t n = sockets::write(wakeupFd_[1], &one, sizeof one);
    if (n != sizeof one)
    {
-     LOG_ERROR << "EventLoop::wakeup() writes " << n << " bytes instead of 8";
-@@ -211,7 +205,7 @@ void EventLoop::wakeup()
+-    LOG_ERROR << "EventLoop::wakeup() writes " << n << " bytes instead of 8";
++    LOG_ERROR << "EventLoop::wakeup() writes " << n << " bytes instead of 1";
+   }
+ }
+ 
  void EventLoop::handleRead()
  {
-   uint64_t one = 1;
+-  uint64_t one = 1;
 -  ssize_t n = sockets::read(wakeupFd_, &one, sizeof one);
-+  ssize_t n = sockets::read(wakeupFd_[0], &one, sizeof one);
-   if (n != sizeof one)
-   {
-     LOG_ERROR << "EventLoop::handleRead() reads " << n << " bytes instead of 8";
+-  if (n != sizeof one)
+-  {
+-    LOG_ERROR << "EventLoop::handleRead() reads " << n << " bytes instead of 8";
+-  }
++  char buf[4096] = { 0 };
++  ssize_t n = sockets::read(wakeupFd_[0], buf, sizeof buf);
++  (void)n;
+ }
+ 
+ void EventLoop::doPendingFunctors()
 diff --git a/muduo/net/EventLoop.h b/muduo/net/EventLoop.h
 --- a/muduo/net/EventLoop.h
 +++ b/muduo/net/EventLoop.h
-@@ -124,7 +124,7 @@ class EventLoop : boost::noncopyable
+@@ -130,7 +130,7 @@ class EventLoop : boost::noncopyable
    Timestamp pollReturnTime_;
    boost::scoped_ptr<Poller> poller_;
    boost::scoped_ptr<TimerQueue> timerQueue_;
@@ -257,7 +290,23 @@ diff --git a/muduo/net/InetAddress.cc b/muduo/net/InetAddress.cc
 diff --git a/muduo/net/SocketsOps.cc b/muduo/net/SocketsOps.cc
 --- a/muduo/net/SocketsOps.cc
 +++ b/muduo/net/SocketsOps.cc
-@@ -59,7 +59,6 @@ void setNonBlockAndCloseOnExec(int sockfd)
+@@ -37,7 +37,9 @@ SA* sockaddr_cast(struct sockaddr_in* addr)
+   return static_cast<SA*>(implicit_cast<void*>(addr));
+ }
+ 
+-void setNonBlockAndCloseOnExec(int sockfd)
++}
++
++void sockets::setNonBlockAndCloseOnExec(int sockfd)
+ {
+   // non-block
+   int flags = ::fcntl(sockfd, F_GETFL, 0);
+@@ -54,12 +56,9 @@ void setNonBlockAndCloseOnExec(int sockfd)
+   (void)ret;
+ }
+ 
+-}
+-
  int sockets::createNonblockingOrDie()
  {
    // socket
@@ -282,7 +331,7 @@ diff --git a/muduo/net/SocketsOps.cc b/muduo/net/SocketsOps.cc
 @@ -98,13 +90,8 @@ void sockets::listenOrDie(int sockfd)
  int sockets::accept(int sockfd, struct sockaddr_in* addr)
  {
-   socklen_t addrlen = sizeof *addr;
+   socklen_t addrlen = static_cast<socklen_t>(sizeof *addr);
 -#if VALGRIND
    int connfd = ::accept(sockfd, sockaddr_cast(addr), &addrlen);
    setNonBlockAndCloseOnExec(connfd);
@@ -293,6 +342,18 @@ diff --git a/muduo/net/SocketsOps.cc b/muduo/net/SocketsOps.cc
    if (connfd < 0)
    {
      int savedErrno = errno;
+diff --git a/muduo/net/SocketsOps.h b/muduo/net/SocketsOps.h
+--- a/muduo/net/SocketsOps.h
++++ b/muduo/net/SocketsOps.h
+@@ -25,6 +25,8 @@ namespace sockets
+ /// abort if any error.
+ int createNonblockingOrDie();
+ 
++void setNonBlockAndCloseOnExec(int sockfd);
++
+ int  connect(int sockfd, const struct sockaddr_in& addr);
+ void bindOrDie(int sockfd, const struct sockaddr_in& addr);
+ void listenOrDie(int sockfd);
 diff --git a/muduo/net/TimerQueue.cc b/muduo/net/TimerQueue.cc
 --- a/muduo/net/TimerQueue.cc
 +++ b/muduo/net/TimerQueue.cc
@@ -389,7 +450,7 @@ diff --git a/muduo/net/TimerQueue.cc b/muduo/net/TimerQueue.cc
    for (TimerList::iterator it = timers_.begin();
        it != timers_.end(); ++it)
 @@ -129,11 +78,19 @@ void TimerQueue::cancel(TimerId timerId)
- void TimerQueue::scheduleInLoop(Timer* timer)
+ void TimerQueue::addTimerInLoop(Timer* timer)
  {
    loop_->assertInLoopThread();
 -  bool earliestChanged = insert(timer);
@@ -411,7 +472,7 @@ diff --git a/muduo/net/TimerQueue.cc b/muduo/net/TimerQueue.cc
    }
  }
  
-@@ -157,11 +114,10 @@ void TimerQueue::cancelInLoop(TimerId ti
+@@ -157,11 +114,10 @@ void TimerQueue::cancelInLoop(TimerId timerId)
    assert(timers_.size() == activeTimers_.size());
  }
  
@@ -424,7 +485,7 @@ diff --git a/muduo/net/TimerQueue.cc b/muduo/net/TimerQueue.cc
  
    std::vector<Entry> expired = getExpired(now);
  
-@@ -225,11 +181,6 @@ void TimerQueue::reset(const std::vector
+@@ -225,11 +181,6 @@ void TimerQueue::reset(const std::vector<Entry>& expired, Timestamp now)
    {
      nextExpire = timers_.begin()->second->expiration();
    }
@@ -451,9 +512,9 @@ diff --git a/muduo/net/TimerQueue.h b/muduo/net/TimerQueue.h
    // FIXME: use unique_ptr<Timer> instead of raw pointers.
 @@ -61,8 +64,6 @@ class TimerQueue : boost::noncopyable
  
-   void scheduleInLoop(Timer* timer);
+   void addTimerInLoop(Timer* timer);
    void cancelInLoop(TimerId timerId);
--  // called when timerfd arms
+-  // called when timerfd alarms
 -  void handleRead();
    // move out all expired timers
    std::vector<Entry> getExpired(Timestamp now);

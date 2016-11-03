@@ -55,10 +55,10 @@ void removeConnector(const ConnectorPtr& connector)
 
 TcpClient::TcpClient(EventLoop* loop,
                      const InetAddress& serverAddr,
-                     const string& name)
+                     const string& nameArg)
   : loop_(CHECK_NOTNULL(loop)),
     connector_(new Connector(loop, serverAddr)),
-    name_(name),
+    name_(nameArg),
     connectionCallback_(defaultConnectionCallback),
     messageCallback_(defaultMessageCallback),
     retry_(false),
@@ -77,16 +77,23 @@ TcpClient::~TcpClient()
   LOG_INFO << "TcpClient::~TcpClient[" << name_
            << "] - connector " << get_pointer(connector_);
   TcpConnectionPtr conn;
+  bool unique = false;
   {
     MutexLockGuard lock(mutex_);
+    unique = connection_.unique();
     conn = connection_;
   }
   if (conn)
   {
+    assert(loop_ == conn->getLoop());
     // FIXME: not 100% safe, if we are in different thread
     CloseCallback cb = boost::bind(&detail::removeConnection, loop_, _1);
     loop_->runInLoop(
         boost::bind(&TcpConnection::setCloseCallback, conn, cb));
+    if (unique)
+    {
+      conn->forceClose();
+    }
   }
   else
   {

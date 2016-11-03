@@ -18,11 +18,11 @@ class Test : boost::noncopyable
     printf("tid=%d, destructing %p %s\n", muduo::CurrentThread::tid(), this, name_.c_str());
   }
 
-  const std::string& name() const { return name_; }
-  void setName(const std::string& n) { name_ = n; }
+  const muduo::string& name() const { return name_; }
+  void setName(const muduo::string& n) { name_ = n; }
 
  private:
-  std::string name_;
+  muduo::string name_;
 };
 
 muduo::ThreadLocal<Test> testObj1;
@@ -32,11 +32,11 @@ void print()
 {
   printf("tid=%d, obj1 %p name=%s\n",
          muduo::CurrentThread::tid(),
-	 &testObj1.value(),
+         &testObj1.value(),
          testObj1.value().name().c_str());
   printf("tid=%d, obj2 %p name=%s\n",
          muduo::CurrentThread::tid(),
-	 &testObj2.value(),
+         &testObj2.value(),
          testObj2.value().name().c_str());
 }
 

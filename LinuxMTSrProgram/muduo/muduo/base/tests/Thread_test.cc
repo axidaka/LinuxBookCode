@@ -4,6 +4,13 @@
 #include <string>
 #include <boost/bind.hpp>
 #include <stdio.h>
+#include <unistd.h>
+
+void mysleep(int seconds)
+{
+  timespec t = { seconds, 0 };
+  nanosleep(&t, NULL);
+}
 
 void threadFunc()
 {
@@ -13,6 +20,12 @@ void threadFunc()
 void threadFunc2(int x)
 {
   printf("tid=%d, x=%d\n", muduo::CurrentThread::tid(), x);
+}
+
+void threadFunc3()
+{
+  printf("tid=%d\n", muduo::CurrentThread::tid());
+  mysleep(1);
 }
 
 class Foo
@@ -60,5 +73,18 @@ int main()
   t4.start();
   t4.join();
 
+  {
+    muduo::Thread t5(threadFunc3);
+    t5.start();
+    // t5 may destruct eariler than thread creation.
+  }
+  mysleep(2);
+  {
+    muduo::Thread t6(threadFunc3);
+    t6.start();
+    mysleep(2);
+    // t6 destruct later than thread creation.
+  }
+  sleep(2);
   printf("number of created threads %d\n", muduo::Thread::numCreated());
 }

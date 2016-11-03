@@ -13,12 +13,13 @@
 
 #include <vector>
 
+#include <boost/any.hpp>
 #include <boost/function.hpp>
 #include <boost/noncopyable.hpp>
 #include <boost/scoped_ptr.hpp>
 
 #include <muduo/base/Mutex.h>
-#include <muduo/base/Thread.h>
+#include <muduo/base/CurrentThread.h>
 #include <muduo/base/Timestamp.h>
 #include <muduo/net/Callbacks.h>
 #include <muduo/net/TimerId.h>
@@ -51,10 +52,14 @@ class EventLoop : boost::noncopyable
   ///
   void loop();
 
+  /// Quits loop.
+  ///
+  /// This is not 100% thread safe, if you call through a raw pointer,
+  /// better to call through shared_ptr<EventLoop> for 100% safety.
   void quit();
 
   ///
-  /// Time when poll returns, usually means data arrivial.
+  /// Time when poll returns, usually means data arrival.
   ///
   Timestamp pollReturnTime() const { return pollReturnTime_; }
 
@@ -69,6 +74,13 @@ class EventLoop : boost::noncopyable
   /// Runs after finish pooling.
   /// Safe to call from other threads.
   void queueInLoop(const Functor& cb);
+
+  size_t queueSize() const;
+
+#ifdef __GXX_EXPERIMENTAL_CXX0X__
+  void runInLoop(Functor&& cb);
+  void queueInLoop(Functor&& cb);
+#endif
 
   // timers
 
@@ -93,10 +105,17 @@ class EventLoop : boost::noncopyable
   ///
   void cancel(TimerId timerId);
 
+#ifdef __GXX_EXPERIMENTAL_CXX0X__
+  TimerId runAt(const Timestamp& time, TimerCallback&& cb);
+  TimerId runAfter(double delay, TimerCallback&& cb);
+  TimerId runEvery(double interval, TimerCallback&& cb);
+#endif
+
   // internal usage
   void wakeup();
   void updateChannel(Channel* channel);
   void removeChannel(Channel* channel);
+  bool hasChannel(Channel* channel);
 
   // pid_t threadId() const { return threadId_; }
   void assertInLoopThread()
@@ -110,6 +129,15 @@ class EventLoop : boost::noncopyable
   // bool callingPendingFunctors() const { return callingPendingFunctors_; }
   bool eventHandling() const { return eventHandling_; }
 
+  void setContext(const boost::any& context)
+  { context_ = context; }
+
+  const boost::any& getContext() const
+  { return context_; }
+
+  boost::any* getMutableContext()
+  { return &context_; }
+
   static EventLoop* getEventLoopOfCurrentThread();
 
  private:
@@ -122,7 +150,7 @@ class EventLoop : boost::noncopyable
   typedef std::vector<Channel*> ChannelList;
 
   bool looping_; /* atomic */
-  bool quit_; /* atomic */
+  bool quit_; /* atomic and shared between threads, okay on x86, I guess. */
   bool eventHandling_; /* atomic */
   bool callingPendingFunctors_; /* atomic */
   int64_t iteration_;
@@ -134,10 +162,14 @@ class EventLoop : boost::noncopyable
   // unlike in TimerQueue, which is an internal class,
   // we don't expose Channel to client.
   boost::scoped_ptr<Channel> wakeupChannel_;
+  boost::any context_;
+
+  // scratch variables
   ChannelList activeChannels_;
   Channel* currentActiveChannel_;
-  MutexLock mutex_;
-  std::vector<Functor> pendingFunctors_; // @BuardedBy mutex_
+
+  mutable MutexLock mutex_;
+  std::vector<Functor> pendingFunctors_; // @GuardedBy mutex_
 };
 
 }

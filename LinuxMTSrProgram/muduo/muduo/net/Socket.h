@@ -13,6 +13,9 @@
 
 #include <boost/noncopyable.hpp>
 
+// struct tcp_info is in <netinet/tcp.h>
+struct tcp_info;
+
 namespace muduo
 {
 ///
@@ -27,7 +30,7 @@ class InetAddress;
 /// Wrapper of socket file descriptor.
 ///
 /// It closes the sockfd when desctructs.
-/// It's thread safe, all operations are delagated to OS.
+/// It's thread safe, all operations are delegated to OS.
 class Socket : boost::noncopyable
 {
  public:
@@ -39,6 +42,9 @@ class Socket : boost::noncopyable
   ~Socket();
 
   int fd() const { return sockfd_; }
+  // return true if success.
+  bool getTcpInfo(struct tcp_info*) const;
+  bool getTcpInfoString(char* buf, int len) const;
 
   /// abort if address in use
   void bindAddress(const InetAddress& localaddr);
@@ -62,6 +68,11 @@ class Socket : boost::noncopyable
   /// Enable/disable SO_REUSEADDR
   ///
   void setReuseAddr(bool on);
+
+  ///
+  /// Enable/disable SO_REUSEPORT
+  ///
+  void setReusePort(bool on);
 
   ///
   /// Enable/disable SO_KEEPALIVE

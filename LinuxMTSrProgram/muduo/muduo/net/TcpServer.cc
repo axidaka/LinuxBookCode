@@ -23,15 +23,15 @@ using namespace muduo::net;
 
 TcpServer::TcpServer(EventLoop* loop,
                      const InetAddress& listenAddr,
-                     const string& nameArg)
+                     const string& nameArg,
+                     Option option)
   : loop_(CHECK_NOTNULL(loop)),
-    hostport_(listenAddr.toIpPort()),
+    ipPort_(listenAddr.toIpPort()),
     name_(nameArg),
-    acceptor_(new Acceptor(loop, listenAddr)),
-    threadPool_(new EventLoopThreadPool(loop)),
+    acceptor_(new Acceptor(loop, listenAddr, option == kReusePort)),
+    threadPool_(new EventLoopThreadPool(loop, name_)),
     connectionCallback_(defaultConnectionCallback),
     messageCallback_(defaultMessageCallback),
-    started_(false),
     nextConnId_(1)
 {
   acceptor_->setNewConnectionCallback(
@@ -62,14 +62,11 @@ void TcpServer::setThreadNum(int numThreads)
 
 void TcpServer::start()
 {
-  if (!started_)
+  if (started_.getAndSet(1) == 0)
   {
-    started_ = true;
     threadPool_->start(threadInitCallback_);
-  }
 
-  if (!acceptor_->listenning())
-  {
+    assert(!acceptor_->listenning());
     loop_->runInLoop(
         boost::bind(&Acceptor::listen, get_pointer(acceptor_)));
   }
@@ -79,8 +76,8 @@ void TcpServer::newConnection(int sockfd, const InetAddress& peerAddr)
 {
   loop_->assertInLoopThread();
   EventLoop* ioLoop = threadPool_->getNextLoop();
-  char buf[32];
-  snprintf(buf, sizeof buf, ":%s#%d", hostport_.c_str(), nextConnId_);
+  char buf[64];
+  snprintf(buf, sizeof buf, "-%s#%d", ipPort_.c_str(), nextConnId_);
   ++nextConnId_;
   string connName = name_ + buf;
 

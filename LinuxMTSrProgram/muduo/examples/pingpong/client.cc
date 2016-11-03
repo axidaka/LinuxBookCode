@@ -11,7 +11,6 @@
 
 #include <utility>
 
-#include <mcheck.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -88,7 +87,7 @@ class Client : boost::noncopyable
          int timeout,
          int threadCount)
     : loop_(loop),
-      threadPool_(loop),
+      threadPool_(loop, "pingpong-client"),
       sessionCount_(sessionCount),
       timeout_(timeout)
   {
@@ -127,7 +126,7 @@ class Client : boost::noncopyable
     }
   }
 
-  void onDisconnect()
+  void onDisconnect(const TcpConnectionPtr& conn)
   {
     if (numConnected_.decrementAndGet() == 0)
     {
@@ -147,11 +146,16 @@ class Client : boost::noncopyable
                << " average message size";
       LOG_WARN << static_cast<double>(totalBytesRead) / (timeout_ * 1024 * 1024)
                << " MiB/s throughput";
-      loop_->queueInLoop(boost::bind(&EventLoop::quit, loop_));
+      conn->getLoop()->queueInLoop(boost::bind(&Client::quit, this));
     }
   }
 
  private:
+
+  void quit()
+  {
+    loop_->queueInLoop(boost::bind(&EventLoop::quit, loop_));
+  }
 
   void handleTimeout()
   {
@@ -179,7 +183,7 @@ void Session::onConnection(const TcpConnectionPtr& conn)
   }
   else
   {
-    owner_->onDisconnect();
+    owner_->onDisconnect(conn);
   }
 }
 

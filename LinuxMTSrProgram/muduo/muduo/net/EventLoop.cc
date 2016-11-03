@@ -10,7 +10,6 @@
 
 #include <muduo/base/Logging.h>
 #include <muduo/base/Mutex.h>
-#include <muduo/base/Singleton.h>
 #include <muduo/net/Channel.h>
 #include <muduo/net/Poller.h>
 #include <muduo/net/SocketsOps.h>
@@ -48,7 +47,7 @@ class IgnoreSigPipe
   IgnoreSigPipe()
   {
     ::signal(SIGPIPE, SIG_IGN);
-    LOG_TRACE << "Ignore SIGPIPE";
+    // LOG_TRACE << "Ignore SIGPIPE";
   }
 };
 #pragma GCC diagnostic error "-Wold-style-cast"
@@ -74,7 +73,7 @@ EventLoop::EventLoop()
     wakeupChannel_(new Channel(this, wakeupFd_)),
     currentActiveChannel_(NULL)
 {
-  LOG_TRACE << "EventLoop created " << this << " in thread " << threadId_;
+  LOG_DEBUG << "EventLoop created " << this << " in thread " << threadId_;
   if (t_loopInThisThread)
   {
     LOG_FATAL << "Another EventLoop " << t_loopInThisThread
@@ -92,6 +91,10 @@ EventLoop::EventLoop()
 
 EventLoop::~EventLoop()
 {
+  LOG_DEBUG << "EventLoop " << this << " of thread " << threadId_
+            << " destructs in thread " << CurrentThread::tid();
+  wakeupChannel_->disableAll();
+  wakeupChannel_->remove();
   ::close(wakeupFd_);
   t_loopInThisThread = NULL;
 }
@@ -101,7 +104,7 @@ void EventLoop::loop()
   assert(!looping_);
   assertInLoopThread();
   looping_ = true;
-  quit_ = false;
+  quit_ = false;  // FIXME: what if someone calls quit() before loop() ?
   LOG_TRACE << "EventLoop " << this << " start looping";
 
   while (!quit_)
@@ -133,6 +136,9 @@ void EventLoop::loop()
 void EventLoop::quit()
 {
   quit_ = true;
+  // There is a chance that loop() just executes while(!quit_) and exits,
+  // then EventLoop destructs, then we are accessing an invalid object.
+  // Can be fixed using mutex_ in both places.
   if (!isInLoopThread())
   {
     wakeup();
@@ -164,6 +170,12 @@ void EventLoop::queueInLoop(const Functor& cb)
   }
 }
 
+size_t EventLoop::queueSize() const
+{
+  MutexLockGuard lock(mutex_);
+  return pendingFunctors_.size();
+}
+
 TimerId EventLoop::runAt(const Timestamp& time, const TimerCallback& cb)
 {
   return timerQueue_->addTimer(cb, time, 0.0);
@@ -180,6 +192,51 @@ TimerId EventLoop::runEvery(double interval, const TimerCallback& cb)
   Timestamp time(addTime(Timestamp::now(), interval));
   return timerQueue_->addTimer(cb, time, interval);
 }
+
+#ifdef __GXX_EXPERIMENTAL_CXX0X__
+// FIXME: remove duplication
+void EventLoop::runInLoop(Functor&& cb)
+{
+  if (isInLoopThread())
+  {
+    cb();
+  }
+  else
+  {
+    queueInLoop(std::move(cb));
+  }
+}
+
+void EventLoop::queueInLoop(Functor&& cb)
+{
+  {
+  MutexLockGuard lock(mutex_);
+  pendingFunctors_.push_back(std::move(cb));  // emplace_back
+  }
+
+  if (!isInLoopThread() || callingPendingFunctors_)
+  {
+    wakeup();
+  }
+}
+
+TimerId EventLoop::runAt(const Timestamp& time, TimerCallback&& cb)
+{
+  return timerQueue_->addTimer(std::move(cb), time, 0.0);
+}
+
+TimerId EventLoop::runAfter(double delay, TimerCallback&& cb)
+{
+  Timestamp time(addTime(Timestamp::now(), delay));
+  return runAt(time, std::move(cb));
+}
+
+TimerId EventLoop::runEvery(double interval, TimerCallback&& cb)
+{
+  Timestamp time(addTime(Timestamp::now(), interval));
+  return timerQueue_->addTimer(std::move(cb), time, interval);
+}
+#endif
 
 void EventLoop::cancel(TimerId timerId)
 {
@@ -203,6 +260,13 @@ void EventLoop::removeChannel(Channel* channel)
         std::find(activeChannels_.begin(), activeChannels_.end(), channel) == activeChannels_.end());
   }
   poller_->removeChannel(channel);
+}
+
+bool EventLoop::hasChannel(Channel* channel)
+{
+  assert(channel->ownerLoop() == this);
+  assertInLoopThread();
+  return poller_->hasChannel(channel);
 }
 
 void EventLoop::abortNotInLoopThread()

@@ -9,7 +9,6 @@
 
 #include <utility>
 
-#include <mcheck.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -44,6 +43,7 @@ class EchoServer
     LOG_TRACE << conn->peerAddress().toIpPort() << " -> "
         << conn->localAddress().toIpPort() << " is "
         << (conn->connected() ? "UP" : "DOWN");
+    LOG_INFO << conn->getTcpInfoString();
 
     conn->send("hello\n");
   }
@@ -70,15 +70,15 @@ class EchoServer
 
 int main(int argc, char* argv[])
 {
-  mtrace();
   LOG_INFO << "pid = " << getpid() << ", tid = " << CurrentThread::tid();
   LOG_INFO << "sizeof TcpConnection = " << sizeof(TcpConnection);
   if (argc > 1)
   {
     numThreads = atoi(argv[1]);
   }
+  bool ipv6 = argc > 2;
   EventLoop loop;
-  InetAddress listenAddr(2000);
+  InetAddress listenAddr(2000, false, ipv6);
   EchoServer server(&loop, listenAddr);
 
   server.start();

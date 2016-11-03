@@ -10,7 +10,6 @@
 
 #include <utility>
 
-#include <mcheck.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -23,8 +22,7 @@ class EchoServer
 {
  public:
   EchoServer(EventLoop* loop, const InetAddress& listenAddr)
-    : loop_(loop),
-      server_(loop, listenAddr, "EchoServer"),
+    : server_(loop, listenAddr, "EchoServer"),
       oldCounter_(0),
       startTime_(Timestamp::now())
   {
@@ -75,7 +73,6 @@ class EchoServer
     startTime_ = endTime;
   }
 
-  EventLoop* loop_;
   TcpServer server_;
   AtomicInt64 transferred_;
   AtomicInt64 receivedMessages_;
@@ -85,7 +82,6 @@ class EchoServer
 
 int main(int argc, char* argv[])
 {
-  mtrace();
   LOG_INFO << "pid = " << getpid() << ", tid = " << CurrentThread::tid();
   if (argc > 1)
   {

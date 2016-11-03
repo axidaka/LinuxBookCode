@@ -7,11 +7,25 @@
 #define MUDUO_BASE_SINGLETON_H
 
 #include <boost/noncopyable.hpp>
-#include <pthread.h>
+#include <assert.h>
 #include <stdlib.h> // atexit
+#include <pthread.h>
 
 namespace muduo
 {
+
+namespace detail
+{
+// This doesn't detect inherited member functions!
+// http://stackoverflow.com/questions/1966362/sfinae-to-check-for-inherited-member-functions
+template<typename T>
+struct has_no_destroy
+{
+  template <typename C> static char test(typeof(&C::no_destroy)); // or decltype in C++11
+  template <typename C> static int32_t test(...);
+  const static bool value = sizeof(test<T>(0)) == 1;
+};
+}
 
 template<typename T>
 class Singleton : boost::noncopyable
@@ -20,6 +34,7 @@ class Singleton : boost::noncopyable
   static T& instance()
   {
     pthread_once(&ponce_, &Singleton::init);
+    assert(value_ != NULL);
     return *value_;
   }
 
@@ -30,13 +45,19 @@ class Singleton : boost::noncopyable
   static void init()
   {
     value_ = new T();
-    ::atexit(destroy);
+    if (!detail::has_no_destroy<T>::value)
+    {
+      ::atexit(destroy);
+    }
   }
 
   static void destroy()
   {
     typedef char T_must_be_complete_type[sizeof(T) == 0 ? -1 : 1];
+    T_must_be_complete_type dummy; (void) dummy;
+
     delete value_;
+    value_ = NULL;
   }
 
  private:

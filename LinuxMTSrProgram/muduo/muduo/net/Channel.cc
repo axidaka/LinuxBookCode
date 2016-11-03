@@ -29,13 +29,19 @@ Channel::Channel(EventLoop* loop, int fd__)
     index_(-1),
     logHup_(true),
     tied_(false),
-    eventHandling_(false)
+    eventHandling_(false),
+    addedToLoop_(false)
 {
 }
 
 Channel::~Channel()
 {
   assert(!eventHandling_);
+  assert(!addedToLoop_);
+  if (loop_->isInLoopThread())
+  {
+    assert(!loop_->hasChannel(this));
+  }
 }
 
 void Channel::tie(const boost::shared_ptr<void>& obj)
@@ -46,12 +52,14 @@ void Channel::tie(const boost::shared_ptr<void>& obj)
 
 void Channel::update()
 {
+  addedToLoop_ = true;
   loop_->updateChannel(this);
 }
 
 void Channel::remove()
 {
   assert(isNoneEvent());
+  addedToLoop_ = false;
   loop_->removeChannel(this);
 }
 
@@ -75,18 +83,19 @@ void Channel::handleEvent(Timestamp receiveTime)
 void Channel::handleEventWithGuard(Timestamp receiveTime)
 {
   eventHandling_ = true;
+  LOG_TRACE << reventsToString();
   if ((revents_ & POLLHUP) && !(revents_ & POLLIN))
   {
     if (logHup_)
     {
-      LOG_WARN << "Channel::handle_event() POLLHUP";
+      LOG_WARN << "fd = " << fd_ << " Channel::handle_event() POLLHUP";
     }
     if (closeCallback_) closeCallback_();
   }
 
   if (revents_ & POLLNVAL)
   {
-    LOG_WARN << "Channel::handle_event() POLLNVAL";
+    LOG_WARN << "fd = " << fd_ << " Channel::handle_event() POLLNVAL";
   }
 
   if (revents_ & (POLLERR | POLLNVAL))
@@ -106,21 +115,31 @@ void Channel::handleEventWithGuard(Timestamp receiveTime)
 
 string Channel::reventsToString() const
 {
+  return eventsToString(fd_, revents_);
+}
+
+string Channel::eventsToString() const
+{
+  return eventsToString(fd_, events_);
+}
+
+string Channel::eventsToString(int fd, int ev)
+{
   std::ostringstream oss;
-  oss << fd_ << ": ";
-  if (revents_ & POLLIN)
+  oss << fd << ": ";
+  if (ev & POLLIN)
     oss << "IN ";
-  if (revents_ & POLLPRI)
+  if (ev & POLLPRI)
     oss << "PRI ";
-  if (revents_ & POLLOUT)
+  if (ev & POLLOUT)
     oss << "OUT ";
-  if (revents_ & POLLHUP)
+  if (ev & POLLHUP)
     oss << "HUP ";
-  if (revents_ & POLLRDHUP)
+  if (ev & POLLRDHUP)
     oss << "RDHUP ";
-  if (revents_ & POLLERR)
+  if (ev & POLLERR)
     oss << "ERR ";
-  if (revents_ & POLLNVAL)
+  if (ev & POLLNVAL)
     oss << "NVAL ";
 
   return oss.str().c_str();

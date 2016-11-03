@@ -8,6 +8,7 @@
 
 #include <muduo/net/Acceptor.h>
 
+#include <muduo/base/Logging.h>
 #include <muduo/net/EventLoop.h>
 #include <muduo/net/InetAddress.h>
 #include <muduo/net/SocketsOps.h>
@@ -22,15 +23,16 @@
 using namespace muduo;
 using namespace muduo::net;
 
-Acceptor::Acceptor(EventLoop* loop, const InetAddress& listenAddr)
+Acceptor::Acceptor(EventLoop* loop, const InetAddress& listenAddr, bool reuseport)
   : loop_(loop),
-    acceptSocket_(sockets::createNonblockingOrDie()),
+    acceptSocket_(sockets::createNonblockingOrDie(listenAddr.family())),
     acceptChannel_(loop, acceptSocket_.fd()),
     listenning_(false),
     idleFd_(::open("/dev/null", O_RDONLY | O_CLOEXEC))
 {
   assert(idleFd_ >= 0);
   acceptSocket_.setReuseAddr(true);
+  acceptSocket_.setReusePort(reuseport);
   acceptSocket_.bindAddress(listenAddr);
   acceptChannel_.setReadCallback(
       boost::bind(&Acceptor::handleRead, this));
@@ -54,7 +56,7 @@ void Acceptor::listen()
 void Acceptor::handleRead()
 {
   loop_->assertInLoopThread();
-  InetAddress peerAddr(0);
+  InetAddress peerAddr;
   //FIXME loop until no more
   int connfd = acceptSocket_.accept(&peerAddr);
   if (connfd >= 0)
@@ -72,9 +74,10 @@ void Acceptor::handleRead()
   }
   else
   {
+    LOG_SYSERR << "in Acceptor::handleRead";
     // Read the section named "The special problem of
     // accept()ing when you can't" in libev's doc.
-    // By Marc Lehmann, author of livev.
+    // By Marc Lehmann, author of libev.
     if (errno == EMFILE)
     {
       ::close(idleFd_);

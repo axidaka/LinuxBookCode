@@ -9,6 +9,7 @@
 #include <muduo/net/TcpConnection.h>
 
 #include <muduo/base/Logging.h>
+#include <muduo/base/WeakCallback.h>
 #include <muduo/net/Channel.h>
 #include <muduo/net/EventLoop.h>
 #include <muduo/net/Socket.h>
@@ -17,7 +18,6 @@
 #include <boost/bind.hpp>
 
 #include <errno.h>
-#include <stdio.h>
 
 using namespace muduo;
 using namespace muduo::net;
@@ -27,6 +27,7 @@ void muduo::net::defaultConnectionCallback(const TcpConnectionPtr& conn)
   LOG_TRACE << conn->localAddress().toIpPort() << " -> "
             << conn->peerAddress().toIpPort() << " is "
             << (conn->connected() ? "UP" : "DOWN");
+  // do not call conn->forceClose(), because some users want to register message callback only.
 }
 
 void muduo::net::defaultMessageCallback(const TcpConnectionPtr&,
@@ -48,7 +49,8 @@ TcpConnection::TcpConnection(EventLoop* loop,
     channel_(new Channel(loop, sockfd)),
     localAddr_(localAddr),
     peerAddr_(peerAddr),
-    highWaterMark_(64*1024*1024)
+    highWaterMark_(64*1024*1024),
+    reading_(true)
 {
   channel_->setReadCallback(
       boost::bind(&TcpConnection::handleRead, this, _1));
@@ -66,26 +68,27 @@ TcpConnection::TcpConnection(EventLoop* loop,
 TcpConnection::~TcpConnection()
 {
   LOG_DEBUG << "TcpConnection::dtor[" <<  name_ << "] at " << this
-            << " fd=" << channel_->fd();
+            << " fd=" << channel_->fd()
+            << " state=" << stateToString();
+  assert(state_ == kDisconnected);
 }
 
-void TcpConnection::send(const void* data, size_t len)
+bool TcpConnection::getTcpInfo(struct tcp_info* tcpi) const
 {
-  if (state_ == kConnected)
-  {
-    if (loop_->isInLoopThread())
-    {
-      sendInLoop(data, len);
-    }
-    else
-    {
-      string message(static_cast<const char*>(data), len);
-      loop_->runInLoop(
-          boost::bind(&TcpConnection::sendInLoop,
-                      this,     // FIXME
-                      message));
-    }
-  }
+  return socket_->getTcpInfo(tcpi);
+}
+
+string TcpConnection::getTcpInfoString() const
+{
+  char buf[1024];
+  buf[0] = '\0';
+  socket_->getTcpInfoString(buf, sizeof buf);
+  return buf;
+}
+
+void TcpConnection::send(const void* data, int len)
+{
+  send(StringPiece(static_cast<const char*>(data), len));
 }
 
 void TcpConnection::send(const StringPiece& message)
@@ -138,6 +141,12 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
   loop_->assertInLoopThread();
   ssize_t nwrote = 0;
   size_t remaining = len;
+  bool faultError = false;
+  if (state_ == kDisconnected)
+  {
+    LOG_WARN << "disconnected, give up writing";
+    return;
+  }
   // if no thing in output queue, try writing directly
   if (!channel_->isWriting() && outputBuffer_.readableBytes() == 0)
   {
@@ -156,14 +165,17 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
       if (errno != EWOULDBLOCK)
       {
         LOG_SYSERR << "TcpConnection::sendInLoop";
+        if (errno == EPIPE || errno == ECONNRESET) // FIXME: any others?
+        {
+          faultError = true;
+        }
       }
     }
   }
 
   assert(remaining <= len);
-  if (remaining > 0)
+  if (!faultError && remaining > 0)
   {
-    LOG_TRACE << "I am going to write more data";
     size_t oldLen = outputBuffer_.readableBytes();
     if (oldLen + remaining >= highWaterMark_
         && oldLen < highWaterMark_
@@ -200,9 +212,112 @@ void TcpConnection::shutdownInLoop()
   }
 }
 
+// void TcpConnection::shutdownAndForceCloseAfter(double seconds)
+// {
+//   // FIXME: use compare and swap
+//   if (state_ == kConnected)
+//   {
+//     setState(kDisconnecting);
+//     loop_->runInLoop(boost::bind(&TcpConnection::shutdownAndForceCloseInLoop, this, seconds));
+//   }
+// }
+
+// void TcpConnection::shutdownAndForceCloseInLoop(double seconds)
+// {
+//   loop_->assertInLoopThread();
+//   if (!channel_->isWriting())
+//   {
+//     // we are not writing
+//     socket_->shutdownWrite();
+//   }
+//   loop_->runAfter(
+//       seconds,
+//       makeWeakCallback(shared_from_this(),
+//                        &TcpConnection::forceCloseInLoop));
+// }
+
+void TcpConnection::forceClose()
+{
+  // FIXME: use compare and swap
+  if (state_ == kConnected || state_ == kDisconnecting)
+  {
+    setState(kDisconnecting);
+    loop_->queueInLoop(boost::bind(&TcpConnection::forceCloseInLoop, shared_from_this()));
+  }
+}
+
+void TcpConnection::forceCloseWithDelay(double seconds)
+{
+  if (state_ == kConnected || state_ == kDisconnecting)
+  {
+    setState(kDisconnecting);
+    loop_->runAfter(
+        seconds,
+        makeWeakCallback(shared_from_this(),
+                         &TcpConnection::forceClose));  // not forceCloseInLoop to avoid race condition
+  }
+}
+
+void TcpConnection::forceCloseInLoop()
+{
+  loop_->assertInLoopThread();
+  if (state_ == kConnected || state_ == kDisconnecting)
+  {
+    // as if we received 0 byte in handleRead();
+    handleClose();
+  }
+}
+
+const char* TcpConnection::stateToString() const
+{
+  switch (state_)
+  {
+    case kDisconnected:
+      return "kDisconnected";
+    case kConnecting:
+      return "kConnecting";
+    case kConnected:
+      return "kConnected";
+    case kDisconnecting:
+      return "kDisconnecting";
+    default:
+      return "unknown state";
+  }
+}
+
 void TcpConnection::setTcpNoDelay(bool on)
 {
   socket_->setTcpNoDelay(on);
+}
+
+void TcpConnection::startRead()
+{
+  loop_->runInLoop(boost::bind(&TcpConnection::startReadInLoop, this));
+}
+
+void TcpConnection::startReadInLoop()
+{
+  loop_->assertInLoopThread();
+  if (!reading_ || !channel_->isReading())
+  {
+    channel_->enableReading();
+    reading_ = true;
+  }
+}
+
+void TcpConnection::stopRead()
+{
+  loop_->runInLoop(boost::bind(&TcpConnection::stopReadInLoop, this));
+}
+
+void TcpConnection::stopReadInLoop()
+{
+  loop_->assertInLoopThread();
+  if (reading_ || channel_->isReading())
+  {
+    channel_->disableReading();
+    reading_ = false;
+  } 
 }
 
 void TcpConnection::connectEstablished()
@@ -273,10 +388,6 @@ void TcpConnection::handleWrite()
           shutdownInLoop();
         }
       }
-      else
-      {
-        LOG_TRACE << "I am going to write more data";
-      }
     }
     else
     {
@@ -289,14 +400,15 @@ void TcpConnection::handleWrite()
   }
   else
   {
-    LOG_TRACE << "Connection is down, no more writing";
+    LOG_TRACE << "Connection fd = " << channel_->fd()
+              << " is down, no more writing";
   }
 }
 
 void TcpConnection::handleClose()
 {
   loop_->assertInLoopThread();
-  LOG_TRACE << "TcpConnection::handleClose state = " << state_;
+  LOG_TRACE << "fd = " << channel_->fd() << " state = " << stateToString();
   assert(state_ == kConnected || state_ == kDisconnecting);
   // we don't close fd, leave it to dtor, so we can find leaks easily.
   setState(kDisconnected);

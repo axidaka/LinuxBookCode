@@ -48,11 +48,13 @@ void onServerMessage(const TcpConnectionPtr& conn, Buffer* buf, Timestamp)
         char cmd = buf->peek()[1];
         const void* port = buf->peek() + 2;
         const void* ip = buf->peek() + 4;
+
         sockaddr_in addr;
         bzero(&addr, sizeof addr);
         addr.sin_family = AF_INET;
         addr.sin_port = *static_cast<const in_port_t*>(port);
         addr.sin_addr.s_addr = *static_cast<const uint32_t*>(ip);
+
         bool socks4a = sockets::networkToHost32(addr.sin_addr.s_addr) < 256;
         bool okay = false;
         if (socks4a)
@@ -63,10 +65,10 @@ void onServerMessage(const TcpConnectionPtr& conn, Buffer* buf, Timestamp)
             string hostname = where+1;
             where = endOfHostName;
             LOG_INFO << "Socks4a host name " << hostname;
-            struct hostent* hent = gethostbyname(hostname.c_str());
-            if (hent)
+            InetAddress tmp;
+            if (InetAddress::resolve(hostname, &tmp))
             {
-              addr.sin_addr = *reinterpret_cast<in_addr*>(hent->h_addr);
+              addr.sin_addr.s_addr = tmp.ipNetEndian();
               okay = true;
             }
           }
@@ -89,6 +91,8 @@ void onServerMessage(const TcpConnectionPtr& conn, Buffer* buf, Timestamp)
           g_tunnels[conn->name()] = tunnel;
           buf->retrieveUntil(where+1);
           char response[] = "\000\x5aUVWXYZ";
+          memcpy(response+2, &addr.sin_port, 2);
+          memcpy(response+4, &addr.sin_addr.s_addr, 4);
           conn->send(response, 8);
         }
         else

@@ -26,103 +26,6 @@ namespace net
 namespace detail
 {
 
-// FIXME: move to HttpContext class
-bool processRequestLine(const char* begin, const char* end, HttpContext* context)
-{
-  bool succeed = false;
-  const char* start = begin;
-  const char* space = std::find(start, end, ' ');
-  HttpRequest& request = context->request();
-  if (space != end && request.setMethod(start, space))
-  {
-    start = space+1;
-    space = std::find(start, end, ' ');
-    if (space != end)
-    {
-      request.setPath(start, space);
-      start = space+1;
-      succeed = end-start == 8 && std::equal(start, end-1, "HTTP/1.");
-      if (succeed)
-      {
-        if (*(end-1) == '1')
-        {
-          request.setVersion(HttpRequest::kHttp11);
-        }
-        else if (*(end-1) == '0')
-        {
-          request.setVersion(HttpRequest::kHttp10);
-        }
-        else
-        {
-          succeed = false;
-        }
-      }
-    }
-  }
-  return succeed;
-}
-
-// FIXME: move to HttpContext class
-// return false if any error
-bool parseRequest(Buffer* buf, HttpContext* context, Timestamp receiveTime)
-{
-  bool ok = true;
-  bool hasMore = true;
-  while (hasMore)
-  {
-    if (context->expectRequestLine())
-    {
-      const char* crlf = buf->findCRLF();
-      if (crlf)
-      {
-        ok = processRequestLine(buf->peek(), crlf, context);
-        if (ok)
-        {
-          context->request().setReceiveTime(receiveTime);
-          buf->retrieveUntil(crlf + 2);
-          context->receiveRequestLine();
-        }
-        else
-        {
-          hasMore = false;
-        }
-      }
-      else
-      {
-        hasMore = false;
-      }
-    }
-    else if (context->expectHeaders())
-    {
-      const char* crlf = buf->findCRLF();
-      if (crlf)
-      {
-        const char* colon = std::find(buf->peek(), crlf, ':');
-        if (colon != crlf)
-        {
-          context->request().addHeader(buf->peek(), colon, crlf);
-        }
-        else
-        {
-          // empty line, end of header
-          context->receiveHeaders();
-          hasMore = !context->gotAll();
-        }
-        buf->retrieveUntil(crlf + 2);
-      }
-      else
-      {
-        hasMore = false;
-      }
-    }
-    else if (context->expectBody())
-    {
-      // FIXME:
-    }
-  }
-  return ok;
-}
-
 void defaultHttpCallback(const HttpRequest&, HttpResponse* resp)
 {
   resp->setStatusCode(HttpResponse::k404NotFound);
@@ -136,8 +39,9 @@ void defaultHttpCallback(const HttpRequest&, HttpResponse* resp)
 
 HttpServer::HttpServer(EventLoop* loop,
                        const InetAddress& listenAddr,
-                       const string& name)
-  : server_(loop, listenAddr, name),
+                       const string& name,
+                       TcpServer::Option option)
+  : server_(loop, listenAddr, name, option),
     httpCallback_(detail::defaultHttpCallback)
 {
   server_.setConnectionCallback(
@@ -153,7 +57,7 @@ HttpServer::~HttpServer()
 void HttpServer::start()
 {
   LOG_WARN << "HttpServer[" << server_.name()
-    << "] starts listenning on " << server_.hostport();
+    << "] starts listenning on " << server_.ipPort();
   server_.start();
 }
 
@@ -171,7 +75,7 @@ void HttpServer::onMessage(const TcpConnectionPtr& conn,
 {
   HttpContext* context = boost::any_cast<HttpContext>(conn->getMutableContext());
 
-  if (!detail::parseRequest(buf, context, receiveTime))
+  if (!context->parseRequest(buf, receiveTime))
   {
     conn->send("HTTP/1.1 400 Bad Request\r\n\r\n");
     conn->shutdown();

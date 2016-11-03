@@ -31,7 +31,10 @@ class Timestamp : public muduo::copyable,
   /// Constucts a Timestamp at specific time
   ///
   /// @param microSecondsSinceEpoch
-  explicit Timestamp(int64_t microSecondsSinceEpoch);
+  explicit Timestamp(int64_t microSecondsSinceEpochArg)
+    : microSecondsSinceEpoch_(microSecondsSinceEpochArg)
+  {
+  }
 
   void swap(Timestamp& that)
   {
@@ -41,7 +44,7 @@ class Timestamp : public muduo::copyable,
   // default copy/assignment/dtor are Okay
 
   string toString() const;
-  string toFormattedString() const;
+  string toFormattedString(bool showMicroseconds = true) const;
 
   bool valid() const { return microSecondsSinceEpoch_ > 0; }
 
@@ -54,7 +57,20 @@ class Timestamp : public muduo::copyable,
   /// Get time of now.
   ///
   static Timestamp now();
-  static Timestamp invalid();
+  static Timestamp invalid()
+  {
+    return Timestamp();
+  }
+
+  static Timestamp fromUnixTime(time_t t)
+  {
+    return fromUnixTime(t, 0);
+  }
+
+  static Timestamp fromUnixTime(time_t t, int microseconds)
+  {
+    return Timestamp(static_cast<int64_t>(t) * kMicroSecondsPerSecond + microseconds);
+  }
 
   static const int kMicroSecondsPerSecond = 1000 * 1000;
 
@@ -77,7 +93,7 @@ inline bool operator==(Timestamp lhs, Timestamp rhs)
 ///
 /// @param high, low
 /// @return (high-low) in seconds
-/// @c double has 52-bit precision, enough for one-microseciond
+/// @c double has 52-bit precision, enough for one-microsecond
 /// resolution for next 100 years.
 inline double timeDifference(Timestamp high, Timestamp low)
 {

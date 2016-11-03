@@ -49,6 +49,16 @@ class Channel : boost::noncopyable
   { closeCallback_ = cb; }
   void setErrorCallback(const EventCallback& cb)
   { errorCallback_ = cb; }
+#ifdef __GXX_EXPERIMENTAL_CXX0X__
+  void setReadCallback(ReadEventCallback&& cb)
+  { readCallback_ = std::move(cb); }
+  void setWriteCallback(EventCallback&& cb)
+  { writeCallback_ = std::move(cb); }
+  void setCloseCallback(EventCallback&& cb)
+  { closeCallback_ = std::move(cb); }
+  void setErrorCallback(EventCallback&& cb)
+  { errorCallback_ = std::move(cb); }
+#endif
 
   /// Tie this channel to the owner object managed by shared_ptr,
   /// prevent the owner object being destroyed in handleEvent.
@@ -61,11 +71,12 @@ class Channel : boost::noncopyable
   bool isNoneEvent() const { return events_ == kNoneEvent; }
 
   void enableReading() { events_ |= kReadEvent; update(); }
-  // void disableReading() { events_ &= ~kReadEvent; update(); }
+  void disableReading() { events_ &= ~kReadEvent; update(); }
   void enableWriting() { events_ |= kWriteEvent; update(); }
   void disableWriting() { events_ &= ~kWriteEvent; update(); }
   void disableAll() { events_ = kNoneEvent; update(); }
   bool isWriting() const { return events_ & kWriteEvent; }
+  bool isReading() const { return events_ & kReadEvent; }
 
   // for Poller
   int index() { return index_; }
@@ -73,6 +84,7 @@ class Channel : boost::noncopyable
 
   // for debug
   string reventsToString() const;
+  string eventsToString() const;
 
   void doNotLogHup() { logHup_ = false; }
 
@@ -80,6 +92,8 @@ class Channel : boost::noncopyable
   void remove();
 
  private:
+  static string eventsToString(int fd, int ev);
+
   void update();
   void handleEventWithGuard(Timestamp receiveTime);
 
@@ -90,13 +104,14 @@ class Channel : boost::noncopyable
   EventLoop* loop_;
   const int  fd_;
   int        events_;
-  int        revents_;
+  int        revents_; // it's the received event types of epoll or poll
   int        index_; // used by Poller.
   bool       logHup_;
 
   boost::weak_ptr<void> tie_;
   bool tied_;
   bool eventHandling_;
+  bool addedToLoop_;
   ReadEventCallback readCallback_;
   EventCallback writeCallback_;
   EventCallback closeCallback_;

@@ -62,7 +62,7 @@ void Connector::startInLoop()
 void Connector::stop()
 {
   connect_ = false;
-  loop_->runInLoop(boost::bind(&Connector::stopInLoop, this)); // FIXME: unsafe
+  loop_->queueInLoop(boost::bind(&Connector::stopInLoop, this)); // FIXME: unsafe
   // FIXME: cancel timer
 }
 
@@ -79,8 +79,8 @@ void Connector::stopInLoop()
 
 void Connector::connect()
 {
-  int sockfd = sockets::createNonblockingOrDie();
-  int ret = sockets::connect(sockfd, serverAddr_.getSockAddrInet());
+  int sockfd = sockets::createNonblockingOrDie(serverAddr_.family());
+  int ret = sockets::connect(sockfd, serverAddr_.getSockAddr());
   int savedErrno = (ret == 0) ? 0 : errno;
   switch (savedErrno)
   {
@@ -198,13 +198,14 @@ void Connector::handleWrite()
 
 void Connector::handleError()
 {
-  LOG_ERROR << "Connector::handleError";
-  assert(state_ == kConnecting);
-
-  int sockfd = removeAndResetChannel();
-  int err = sockets::getSocketError(sockfd);
-  LOG_TRACE << "SO_ERROR = " << err << " " << strerror_tl(err);
-  retry(sockfd);
+  LOG_ERROR << "Connector::handleError state=" << state_;
+  if (state_ == kConnecting)
+  {
+    int sockfd = removeAndResetChannel();
+    int err = sockets::getSocketError(sockfd);
+    LOG_TRACE << "SO_ERROR = " << err << " " << strerror_tl(err);
+    retry(sockfd);
+  }
 }
 
 void Connector::retry(int sockfd)

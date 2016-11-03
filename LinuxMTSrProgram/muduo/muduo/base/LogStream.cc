@@ -12,8 +12,12 @@
 using namespace muduo;
 using namespace muduo::detail;
 
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wtautological-compare"
+#else
 #pragma GCC diagnostic ignored "-Wtype-limits"
-//#pragma GCC diagnostic error "-Wtype-limits"
+#endif
+
 namespace muduo
 {
 namespace detail
@@ -57,7 +61,7 @@ size_t convertHex(char buf[], uintptr_t value)
 
   do
   {
-    int lsd = i % 16;
+    int lsd = static_cast<int>(i % 16);
     i /= 16;
     *p++ = digitsHex[lsd];
   } while (i != 0);
@@ -67,6 +71,9 @@ size_t convertHex(char buf[], uintptr_t value)
 
   return p - buf;
 }
+
+template class FixedBuffer<kSmallBuffer>;
+template class FixedBuffer<kLargeBuffer>;
 
 }
 }
@@ -87,9 +94,6 @@ template<int SIZE>
 void FixedBuffer<SIZE>::cookieEnd()
 {
 }
-
-template class FixedBuffer<kSmallBuffer>;
-template class FixedBuffer<kLargeBuffer>;
 
 void LogStream::staticCheck()
 {
