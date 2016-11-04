@@ -1,5 +1,6 @@
-MUDUO_DIRECTORY ?= $(HOME)/build/debug-install
+#MUDUO_DIRECTORY ?= $(HOME)/build/debug-install
 #MUDUO_DIRECTORY ?= $(HOME)/build/install
+MUDUO_DIRECTORY ?= ../../build/release-install
 MUDUO_INCLUDE = $(MUDUO_DIRECTORY)/include
 MUDUO_LIBRARY = $(MUDUO_DIRECTORY)/lib
 SRC = ../src
